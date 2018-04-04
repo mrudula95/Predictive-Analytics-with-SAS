@@ -1,0 +1,223 @@
+##Conjoint Analysis to study detergent brand choice of customers
+
+
+data d1;
+  infile "E:\Users\mxd171430\Downloads\q3.csv" delimiter=',' firstobs=2;
+  input brand$ scent$ soft$ oz pr s1 s2 s3 s4 s5;
+run;
+
+PROC PRINT data=d1;
+	title 'output dataset: Conjoint Analysis';
+RUN;
+
+/*Introducing dummy variables*/
+DATA data_manu;
+  SET d1 ;
+ 
+  IF brand = "complete" THEN brand_c = 1; 
+    ELSE brand_c = 0;
+  IF brand = "Smile" THEN brand_s = 1; 
+    ELSE brand_s = 0;
+  IF scent = "fresh" THEN scent_f = 1; 
+    ELSE scent_f = 0;
+  IF scent = "U" THEN scent_U = 1; 
+    ELSE scent_U = 0;
+  IF soft = "y" THEN soft_fab = 1; 
+    ELSE soft_fab = 0;
+  IF oz = 48 THEN oz_48 = 1; 
+    ELSE oz_48 = 0;
+  IF oz = 32 THEN oz_32 = 1; 
+    ELSE oz_32 = 0;
+  IF pr = 4.99 THEN pr_499 = 1; 
+    ELSE pr_499 = 0;
+  IF pr = 2.99 THEN  pr_299 = 1; 
+    ELSE pr_299 = 0;
+
+/*PROC PRINT data=data_manu;
+	title 'output dataset: Conjoint Analysis';*/
+RUN;
+
+/*Macro function using Do loop to run regression for every respondent*/
+%macro Regression(Var);
+%do i = 1 %to &Var.;
+	proc reg data=data_manu
+		outest = PE&i.;
+	model s&i.= soft_fab brand_c brand_s scent_f scent_U oz_48 oz_32 pr_499 pr_299;
+quit;
+%end;
+%mend;
+%Regression(5);
+
+data Reg_combined;
+	set PE1 PE2 PE3 PE4 PE5;
+run;
+proc print data=Reg_combined;run;
+
+/*Macro function to find Part worths and Importance weights*/
+%macro IV(Var);
+%global persons brand scent oz pr;
+%do i = 1 %to &Var.;
+	proc iml;
+	use PE&i.;
+	person = {"_DEPVAR_"};
+	brandNames = {"brand_c" "brand_s"};
+	scentNames = {"scent_f" "scent_U"};
+	ozNames = {"oz_48" "oz_32"};
+	prNames = {"pr_499" "pr_299"};
+	softName={"soft_fab"};
+/*For solving simultaneous equations*/
+	read all var person into persons;
+
+	x = {1 -1,
+		 1 1};
+    d={0};
+	
+	read all var softName into soft_fab;
+	e = insert(soft_fab`, d, 2, 0);
+	soft = solve(x,e);
+	u_soft_Y = soft[1,1];
+	u_soft_N = soft[2,1];
+
+	a = {1  0  -1,
+    	 0  1  -1,
+     	1   1  1};
+	d={0};
+	
+	read all var brandNames into c;
+	print c;
+	e = insert(c`, d, 3, 0);
+	brand = solve(a,e);
+	u_brand_C = brand[1,1];
+	u_brand_S = brand[2,1];
+	u_brand_W = brand[3,1];
+	
+
+	read all var scentNames into x;
+	e = insert(x`, d, 3, 0);
+	scent = solve(a,e);
+	u_scent_F = scent[1,1];
+	u_scent_U = scent[2,1];
+	u_scent_L = scent[3,1];
+	
+	read all var ozNames into y;
+	e = insert(y`, d, 3, 0);
+	oz = solve(a,e);
+	u_oz_48 = oz[1,1];
+	u_oz_32 = oz[2,1];
+	u_oz_64 = oz[3,1];
+	
+	read all var prNames into z;
+	e = insert(z`, d, 3, 0);
+	pr = solve(a,e);
+	u_pr_499 = pr[1,1];
+	u_pr_299 = pr[2,1];
+	u_pr_399 = pr[3,1];
+	
+	PRINT persons;
+	PRINT brand;
+	PRINT scent;
+	PRINT oz;
+	PRINT pr;
+	PRINT soft;
+/*calculating Max-Min to find importance weights*/
+	diff_freq_brand = max(brand)-min(brand);
+	diff_freq_scent = max(scent)-min(scent);
+	diff_freq_oz = max(oz)-min(oz);
+	diff_freq_pr = max(pr)-min(pr);
+	diff_freq_soft_fab = max(soft)-min(soft);
+/*calculating sum of all*/
+	sum_diff = diff_freq_brand+diff_freq_scent+diff_freq_oz+diff_freq_pr+diff_freq_soft_fab;
+/*relative frequency = (Max-Min)/sum of all frequencies */
+	relative_freq_brand = diff_freq_brand/sum_diff;
+	relative_freq_scent = diff_freq_scent/sum_diff;
+	relative_freq_oz = diff_freq_oz/sum_diff;
+	relative_freq_pr = diff_freq_pr/sum_diff;
+	relative_freq_soft_fab = diff_freq_soft_fab/sum_diff;
+	
+	PRINT relative_freq_brand; 
+	PRINT relative_freq_scent;
+	PRINT relative_freq_oz;
+	PRINT relative_freq_pr;
+	PRINT relative_freq_soft_fab;
+/*Storing data*/
+	create Datas&i. var {persons,u_brand_C,u_brand_S,u_brand_W,u_scent_F,u_scent_U,u_scent_L,u_soft_Y,u_soft_N,u_oz_48,u_oz_32,u_oz_64,u_pr_499,u_pr_299,u_pr_399};
+	append;
+	close Datas&i.;
+
+	create Relative&i. var {persons,relative_freq_brand,relative_freq_scent,relative_freq_soft_fab,relative_freq_oz,relative_freq_pr};
+	append;
+	close Relative&i.;
+	quit;
+%end;
+%mend;
+
+%IV(5);
+
+
+data Util_combined;
+	set Datas1 Datas2 Datas3 Datas4 Datas5;
+run;
+proc print data=Util_combined;run;
+
+data Rel_combined;
+	set Relative1 Relative2 Relative3 Relative4 Relative5;
+run;
+proc print data=Rel_combined;run;
+
+/*macro funtion to apply logit rule*/
+%macro UtilPrediction(Var);
+%global combo1,combo2,combo3,combo4,combo5,persons;
+%do i = 1 %to &Var.;
+
+proc iml;
+	use Datas&i.;
+	person = {"PERSONS"};
+	combination1 = {"U_BRAND_C" "U_SCENT_L" "U_SOFT_Y" "U_OZ_64" "U_PR_299"};
+	combination2 = {"U_BRAND_S" "U_SCENT_F" "U_SOFT_Y" "U_OZ_48" "U_PR_299"};
+	combination3 = {"U_BRAND_S" "U_SCENT_U" "U_SOFT_Y" "U_OZ_48" "U_PR_399"};
+	combination4 = {"U_BRAND_W" "U_SCENT_U" "U_SOFT_Y" "U_OZ_48" "U_PR_299"};
+	combination5 = {"U_BRAND_S" "U_SCENT_U" "U_SOFT_N" "U_OZ_48" "U_PR_299"};
+
+read all var person into persons;
+read all var combination1 into combo1;
+read all var combination2 into combo2;
+read all var combination3 into combo3;
+read all var combination4 into combo4;
+read all var combination5 into combo5;
+
+U1 = sum(combo1);
+U2 = sum(combo2);
+U3 = sum(combo3);
+U4 = sum(combo4);
+U5 = sum(combo5);
+
+sum_exp_u = SUM(EXP(U1)+EXP(U2)+EXP(U3)+EXP(U4)+EXP(U5));
+/*Logit Rule*/
+Logit_combo1 = EXP(U1)/sum_exp_u;
+Logit_combo2 = EXP(U2)/sum_exp_u;
+Logit_combo3 = EXP(U3)/sum_exp_u;
+Logit_combo4 = EXP(U4)/sum_exp_u;
+Logit_combo5 = EXP(U5)/sum_exp_u;
+
+create Logit&i. var {persons,Logit_combo1,Logit_combo2,Logit_combo3,Logit_combo4,Logit_combo5};
+	append;
+	close Logit&i.;
+%end;
+%mend;
+
+%UtilPrediction(5);
+
+data Logit_combined;
+	set Logit1 Logit2 Logit3 Logit4 Logit5;
+run;
+
+
+proc print data=Logit_combined;run;
+
+/*Ran transreg for reference */
+proc transreg data=data_manu
+utilities outtest=utils;
+title2 ’Metric Conjoint Analysis’;
+ods select TestsNote FitStatistics Utilities;
+model identity(s1-s5) = class(brand scent soft oz pr / zero=sum);
+run;
