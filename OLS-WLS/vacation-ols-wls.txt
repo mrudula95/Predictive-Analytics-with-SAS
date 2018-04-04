@@ -1,0 +1,41 @@
+
+
+
+## OLS and WLS regression models and test of heteroskedasticity
+
+libname my "H:\sas-files";
+data vacay; set my.vacation; run;
+proc print data=vacay (obs=10);run;
+
+/* Question 1 */
+/* Regression Model */
+proc reg data=vacay; model miles = income age kids / vif stb;run;
+
+/* White Test */
+proc model data=vacay; parms b0 b1 b2 b3; miles=b0+b1*income+ b2*age+ b3*kids; fit miles / white out=resid1 outresid;run;
+
+proc reg data=vacay;
+model miles= income age kids/ clb;
+output out=rsd1 r=residual;
+plot miles*income r.*income;
+run;
+
+/* Weighted Model */
+proc model data=vacay;
+parms b0 b1 b2 b3;
+inc_inv=1/(income*income);
+miles=b0+b1*income+ b2*age+ b3*kids;
+fit miles / white ;
+weight inc_inv;
+run;
+
+data v2;set vacay;
+kmi=miles/income;
+kage=age/income;
+kinc=1/income;
+kkid=kids/income;
+run;
+proc model data=v2;
+parms b0 b1 b2 b3;
+kmi=b1+b2*kage+ b3*kkid+ b0*kinc;
+fit kmi / white ;run;
